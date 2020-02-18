@@ -19,6 +19,8 @@ The keras implementation of my undergraduate project"Human Pose 3D Estimation"
       robust to multiple types of data.
  # process:
   This building is nowadays  Under Construction....
- 
- 
- Written by a bodybuilder, Yufei Zheng
+  
+ # Reference:
+ 1. RepNet: Weakly Supervised Training of an Adversarial Reprojection Network for 3D Human Pose Estimation, Bastian Wandt and Bodo Rosenhahn Leibniz Universit¨at Hannover Hannover, Germany
+ 2. Unsupervised 3D Pose Estimation with Geometric Self-Supervision, Ching-Hang Chen, Ambrish Tyagi, Amit Agrawal, Dylan Drover, Rohith MV, Stefan Stojanov, James M. Rehg  Amazon Lab126, Georgia Institute of Technology
+ 3.  Lifting 2d Human Pose to 3D: A Weakly Supervised Approach  Sandika Biswas, Sanjana Sinha, Kavya Gupta and Brojeshwar Bhowmick  Embedded Systems and Robotics, TCS Research and Innovation 
