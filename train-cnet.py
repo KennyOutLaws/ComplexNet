@@ -1,7 +1,7 @@
 ###Brand New Network
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = "0"
-os.environ['KMP_DUPLICATE_LIB_OK']='True'
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 import sys
 import glob
 import h5py
@@ -20,124 +20,6 @@ from functools import partial
 from keras.layers.merge import _Merge
 from keras.optimizers import Adam
 
-def normalize_3d(pose):
-    # 3Dモデルの正規化
-    # hip(0)と各関節点の距離の平均値が1になるようにスケール
-    xs = pose.T[0::3] - pose.T[0]  # 17
-    ys = pose.T[1::3] - pose.T[1]  # 17
-    zs = pose.T[2::3] - pose.T[2]  # 17
-    ls = np.sqrt(xs[1:] ** 2 + ys[1:] ** 2 + zs[1:] ** 2)  # 原点からの距離 17个关节点到中心点的距离
-    scale = ls.mean(axis=0)  # 距离的平均
-    pose = pose.T / scale  # 缩放 使距离的平均值为1
-    # hip(0)が原点になるようにシフト
-    pose[0::3] -= pose[0].copy()
-    pose[1::3] -= pose[1].copy()
-    pose[2::3] -= pose[2].copy()
-    return pose.T, scale
-
-
-def normalize_2d(pose):
-    # 2DPoseの正規化
-    # hip(0)と各関節点の距離の平均値が1になるようにスケール
-    xs = pose.T[0::2] - pose.T[0]
-    ys = pose.T[1::2] - pose.T[1]
-    pose = pose.T / np.sqrt(xs[1:] ** 2 + ys[1:] ** 2).mean(axis=0)
-    # hip(0)が原点になるようにシフト
-    mu_x = pose[0].copy()
-    mu_y = pose[1].copy()
-    pose[0::2] -= mu_x
-    pose[1::2] -= mu_y
-    return pose.T
-
-
-def list_to_array(list_data):
-    a = list_data[0]
-    for i in range(1,len(list_data)):
-        a = np.concatenate([a, list_data[i]])
-    return a
-
-
-def prepare_training_data():
-
-    H36M_NAMES = [''] * 32
-    H36M_NAMES[0] = 'Hip'
-    H36M_NAMES[1] = 'RHip'
-    H36M_NAMES[2] = 'RKnee'
-    H36M_NAMES[3] = 'RFoot'
-    H36M_NAMES[6] = 'LHip'
-    H36M_NAMES[7] = 'LKnee'
-    H36M_NAMES[8] = 'LFoot'
-    H36M_NAMES[12] = 'Spine'  # 脊椎
-    H36M_NAMES[13] = 'Thorax'  # 胸部
-    H36M_NAMES[14] = 'Neck/Nose'
-    H36M_NAMES[15] = 'Head'
-    H36M_NAMES[17] = 'LShoulder'
-    H36M_NAMES[18] = 'LElbow'  # 肘
-    H36M_NAMES[19] = 'LWrist'  # 手腕
-    H36M_NAMES[25] = 'RShoulder'
-    H36M_NAMES[26] = 'RElbow'
-    H36M_NAMES[27] = 'RWrist'
-
-    if not os.path.exists('data/h36m/sh_detect_2d.pkl'):
-        print('Downloading detected 2D points by Stacked Hourglass.')
-        os.system('wget --no-check-certificate "https://onedriv' + \
-                  'e.live.com/download?cid=B08D60FE71FF90FD&resid=B08' + \
-                  'D60FE71FF90FD%2118619&authkey=AMBf6RPcWQgjsh0" -O ' + \
-                  'data/h36m/sh_detect_2d.pkl')
-
-
-
-
-    with open('data/h36m/sh_detect_2d.pkl', 'rb') as f:
-        p2d_sh = pickle.load(f)
-    if not os.path.exists('data/h36m/points_3d.pkl'):
-        print('Downloading 3D points in Human3.6M dataset.')
-        os.system('wget --no-check-certificate "https://onedriv' + \
-            'e.live.com/download?cid=B08D60FE71FF90FD&resid=B08' + \
-            'D60FE71FF90FD%2118616&authkey=AFIfEB6VYEZnhlE" -O ' + \
-            'data/h36m/points_3d.pkl')
-    with open('data/h36m/points_3d.pkl', 'rb') as f:
-        p3d = pickle.load(f)
-
-    training_data_2d = []
-    eval_data_2d = []
-    training_data_3d = []
-    eval_data_3d = []
-    subjects = ['S1', 'S5', 'S6', 'S7', 'S8', 'S9', 'S11']
-    for subject in subjects:
-        for action in p2d_sh[subject]:
-            i = 0
-            for camera_name in p2d_sh[subject][action]:
-                # 对每一个action里面的视角，我们取后400个
-                training_data_2d.append(p2d_sh[subject][action][camera_name])
-                if i==0:
-                    eval_data_2d.append(p2d_sh[subject][action][camera_name][-400:])
-                    i+=1
-
-        for action in p3d[subject]:
-            training_data_3d.append(p3d[subject][action][:-400])
-            eval_data_3d.append(p3d[subject][action][-400:])
-
-    dim_to_use_x = np.where(np.array([x != '' for x in H36M_NAMES]))[0] * 3
-    dim_to_use_y = dim_to_use_x + 1
-    dim_to_use_z = dim_to_use_x + 2
-    dim_to_use = np.array(
-        [dim_to_use_x, dim_to_use_y, dim_to_use_z]).T.flatten()
-
-    training_data_2d = list_to_array(training_data_2d)
-    training_data_3d = list_to_array(training_data_3d)
-    eval_data_2d = list_to_array(eval_data_2d)
-    eval_data_3d = list_to_array(eval_data_3d)
-    training_data_3d = training_data_3d[:, dim_to_use]
-    eval_data_3d = eval_data_3d[:, dim_to_use]
-
-
-    training_data_2d, eval_data_2d = normalize_2d(training_data_2d), normalize_2d(eval_data_2d)
-    training_data_3d, _ = normalize_3d(training_data_3d)
-    eval_data_3d, _ = normalize_3d(eval_data_3d)
-    # 研究normalize中transpose的问题，具体可以从numpy数组取一个维度进行试验...
-    return training_data_2d, training_data_3d, eval_data_2d, eval_data_3d
-
 
 
 def reprojection_layer(x):
@@ -145,15 +27,45 @@ def reprojection_layer(x):
 
     x = tf.to_float(x)
 
-    pose3 = tf.reshape(tf.slice(x, [0, 0], [-1, 51]), [-1, 3, 17])
+    pose3 = tf.reshape(tf.slice(x, [0, 0], [-1, 48]), [-1, 3, 16])
 
-    m = tf.reshape(tf.slice(x, [0, 51], [-1, 6]), [-1, 2, 3])
+    m = tf.reshape(tf.slice(x, [0, 48], [-1, 6]), [-1, 2, 3])
 
-    pose2_rec = tf.reshape(tf.matmul(m, pose3), [-1, 34])
+    pose2_rec = tf.reshape(tf.matmul(m, pose3), [-1, 32])
 
     return pose2_rec
 
 
+def prepare_training_data():
+    # poses_2d 即为所放训练的数据集，相差的scale会被预测出来的camera net自动补偿
+    path_H36M = './data/h36m/'
+    actions = ['Directions', 'Discussion', 'Eating', 'Greeting', 'Phoning', 'Photo', 'Posing', 'Purchases', 'Sitting',
+               'SittingDown', 'Smoking', 'Waiting', 'WalkDog', 'WalkTogether', 'Walking']
+    subjects = [1,5,6,7,8]
+    training_data = []
+    for sub in subjects:
+        for action in actions:
+            files = glob.glob(path_H36M + 'S' + str(sub) + '/StackedHourglass/' + action + '*.h5')
+            for file in files:
+                f = h5py.File(file, 'r')
+                training_data.extend(list(f[u'poses']))
+
+    poses_2d = np.zeros((len(training_data), 32))
+
+    for p_idx in range(len(training_data)):
+        p1 = training_data[p_idx]
+        # reshape to my joint representation
+        pose_2d = p1[[2, 1, 0, 3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 12, 11, 10], :].T
+
+        mean_x = np.mean(pose_2d[0, :])
+        pose_2d[0, :] = pose_2d[0, :] - mean_x
+
+        mean_y = np.mean(pose_2d[1, :])
+        pose_2d[1, :] = pose_2d[1, :] - mean_y
+
+        pose_2d = np.hstack((pose_2d[0, :], pose_2d[1, :]))
+        poses_2d[p_idx, :] = pose_2d / np.std(pose_2d)
+    return poses_2d
 
 
 class RandomWeightedAverage(_Merge):
@@ -167,6 +79,38 @@ class RandomWeightedAverage(_Merge):
         return (weights * inputs[0]) + ((1 - weights) * inputs[1])
 
 
+def kcs_layer(x):
+    # implementation of the Kinematic Chain Space as described in the paper
+
+    import tensorflow as tf
+
+    # KCS matrix
+    Ct = tf.constant([
+          [1., 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+          [-1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          [0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          [0, 0, 1, 0, 0, 0, 0, 0, 0, 0 , 0, 0, 0, 1, 0],
+          [0, 0, -1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          [0, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          [0, 0, 0, 0, 1, 0, 0, 0, 0, 0 , 0, 0, 0, 0,-1],
+          [0, 0, 0, 0, -1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+          [0, 0, 0, 0, 0, -1, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0, 0, -1, 1, 0, 0, 0, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0, 0, 0, -1, 1, 0, 0, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ,-1, 1, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0,-1, 1, 0, 0],
+          [0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0,-1, 0, 0]])
+
+    C = tf.reshape(tf.tile(Ct, (tf.shape(x)[0], 1)), (-1, 16, 15))
+
+    poses3 = tf.to_float(tf.reshape(x, [-1, 3, 16]))
+    B = tf.matmul(poses3, C)
+    Psi = tf.matmul(tf.transpose(B, perm=[0, 2, 1]), B)
+
+    return Psi
+
 
 def random_2d_projection(pose_in_3d):
     # todo 有待测验
@@ -174,22 +118,22 @@ def random_2d_projection(pose_in_3d):
     cos_theta = tf.cos(theta)
     sin_theta = tf.sin(theta)
     # 2D Projection
-    x = pose_in_3d[:,0::3]
-    y = pose_in_3d[:,1::3]
-    z = pose_in_3d[:,2::3]
+    x = pose_in_3d[:,0:16]
+    y = pose_in_3d[:,16:32]
+    z = pose_in_3d[:,32:48]
     new_x = tf.multiply(x,cos_theta) + tf.multiply(z,sin_theta)
     pose_2d = tf.concat([new_x,y],axis=1)
     return pose_2d
 
 
 def calculate_geometrical_loss(pose_in_3d):
-    x  = pose_in_3d[:,0::3]
-    z = pose_in_3d[:,2::3]
-    a0 = z[:,9] - z[:,8]
-    b0 = x[:,9] - x[:,8]
+    x  = pose_in_3d[:,0:16]
+    z = pose_in_3d[:,32:48]
+    a0 = z[:,8] - z[:,7]
+    b0 = x[:,8] - x[:,7]
     n0 = tf.sqrt(a0*a0+b0*b0)
-    a1 = z[:,14] - z[:,11]
-    b1 = x[:,14] - x[:,11]
+    a1 = z[:,10] - z[:,13]
+    b1 = x[:,10] - x[:,13]
     n1 = tf.sqrt(a1*a1+b1*b1)
     sin_angle =  (a0*b1 - a1*b0) / (n0*n1)
     return K.relu(-sin_angle)
@@ -201,14 +145,13 @@ def weighted_pose_2d_loss(y_true, y_pred):
     diff = tf.to_float(tf.abs(y_true - y_pred))
 
     # weighting the joints
-    weights_t = tf.to_float(
-        np.array([1, 1, 1, 1, 1, 1, 0, 1, 0.1, 0.1, 1, 1, 1, 1, 0.1,0.1,1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0.1, 0.1, 1, 1, 1, 1, 1, 1]))
+    weights_t = tf.to_float(np.array([1, 1, 1, 1, 1, 1, 0, 1, 0.1, 0.1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0.1, 0.1, 1, 1, 1, 1, 1, 1]))
 
-    weights = tf.tile(tf.reshape(weights_t, (1, 34)), (tf.shape(y_pred)[0], 1))
+    weights = tf.tile(tf.reshape(weights_t, (1, 32)), (tf.shape(y_pred)[0], 1))
 
     tmp = tf.multiply(weights, diff)
 
-    loss = tf.reduce_sum(tmp, axis=1) / 34
+    loss = tf.reduce_sum(tmp, axis=1) / 32
 
     return loss
 
@@ -216,15 +159,6 @@ def weighted_pose_2d_loss(y_true, y_pred):
 def wasserstein_loss(y_true, y_pred):
     return K.mean(y_true * y_pred)
 
-def mpjpe_np(y_true, y_pred):
-    x1 = y_true[:, 0::3]
-    x2 = y_pred[:, 0::3]
-    y1 = y_true[:, 1::3]
-    y2 = y_pred[:, 1::3]
-    z1 = y_true[:, 2::3]
-    z2 = y_pred[:, 2::3]
-    return np.mean(np.sqrt(np.square(x1-x2)+np.square(y1-y2)+np.square(z1-z2)))
-  #  return np.mean(np.sqrt(np.square(y_true - y_pred)))
 
 def cam_loss(y_true, y_pred):
     # loss function to enforce a weak perspective camera as described in the paper
@@ -240,25 +174,25 @@ def cam_loss(y_true, y_pred):
     return loss
 
 def geometrical_constraint_loss(y_pred):
-    x = y_pred[:, 0::3]
-    y = y_pred[:, 1::3]
-    z = y_pred[:, 2::3]
+    x = y_pred[:, 0:16]
+    y = y_pred[:, 16:32]
+    z = y_pred[:, 32:48]
     # define the ratio of the arm and leg
     weights_ratio = [0.4, 0.6]
 
     # left limb 7->10->11->12, right limb 7->13->14->15
     left_arm = tf.reduce_mean(tf.sqrt(
-        tf.square(x[:, 12] - x[:, 13])+tf.square(y[:, 12] - y[:, 13])+tf.square(z[:, 12] - z[:, 13]))+tf.sqrt(
-        tf.square(x[:, 11] - x[:, 12])+tf.square(y[:, 11] - y[:, 12])+tf.square(z[:, 11] - z[:, 12])))
+        tf.square(x[:, 13] - x[:, 14])+tf.square(y[:, 13] - y[:, 14])+tf.square(z[:, 13] - z[:, 14]))+tf.sqrt(
+        tf.square(x[:, 14] - x[:, 15])+tf.square(y[:, 14] - y[:, 15])+tf.square(z[:, 14] - z[:, 15])))
     right_arm = tf.reduce_mean(tf.sqrt(
-        tf.square(x[:, 14] - x[:, 15])+tf.square(y[:, 14] - y[:, 15])+tf.square(z[:, 14] - z[:, 15]))+tf.sqrt(
-        tf.square(x[:, 15] - x[:, 16])+tf.square(y[:, 15] - y[:, 16])+tf.square(z[:, 15] - z[:, 16])))
+        tf.square(x[:, 10] - x[:, 11])+tf.square(y[:, 10] - y[:, 11])+tf.square(z[:, 10] - z[:, 11]))+tf.sqrt(
+        tf.square(x[:, 11] - x[:, 12])+tf.square(y[:, 11] - y[:, 12])+tf.square(z[:, 11] - z[:, 12])))
     left_leg = tf.reduce_mean(tf.sqrt(
-        tf.square(x[:, 4] - x[:, 5]) + tf.square(y[:, 4] - y[:, 5]) + tf.square(z[:, 4] - z[:, 5])) + tf.sqrt(
-        tf.square(x[:, 5] - x[:, 6]) + tf.square(y[:, 5] - y[:, 6]) + tf.square(z[:, 5] - z[:, 6])))
+        tf.square(x[:, 0] - x[:, 1]) + tf.square(y[:, 0] - y[:, 1]) + tf.square(z[:, 0] - z[:, 1])) + tf.sqrt(
+        tf.square(x[:, 1] - x[:, 2]) + tf.square(y[:, 1] - y[:, 2]) + tf.square(z[:, 1] - z[:, 2])))
     right_leg = tf.reduce_mean(tf.sqrt(
-        tf.square(x[:, 1] - x[:, 2]) + tf.square(y[:, 1] - y[:, 2]) + tf.square(z[:, 1] - z[:, 2])) + tf.sqrt(
-        tf.square(x[:, 2] - x[:, 3]) + tf.square(y[:, 2] - y[:, 3]) + tf.square(z[:, 2] - z[:, 3])))
+        tf.square(x[:, 3] - x[:, 4]) + tf.square(y[:, 3] - y[:, 4]) + tf.square(z[:, 3] - z[:, 4])) + tf.sqrt(
+        tf.square(x[:, 4] - x[:, 5]) + tf.square(y[:, 4] - y[:, 5]) + tf.square(z[:, 4] - z[:, 5])))
     loss = tf.reduce_mean(tf.abs(left_arm - right_arm)) * weights_ratio[0] + tf.reduce_mean(tf.abs(left_leg - right_leg)) * weights_ratio[1]
     return tf.abs(loss)
 
@@ -298,8 +232,8 @@ def gradient_penalty_loss(y_true, y_pred, averaged_samples, gradient_penalty_wei
 
 net_name = 'ComplexNet'
 path_h36m = './data/h36m/'
-poses_2d, poses_3d,pose_2d_eval, pose_3d_eval = prepare_training_data()
-num_joints = 17
+poses_2d = prepare_training_data()
+num_joints = 16
 GRADIENT_PENALTY_WEIGHT = 10
 BATCH_SIZE = 32
 TRAINING_RATIO = 5
@@ -435,7 +369,7 @@ negative_y = -positive_y
 dummy_y = np.zeros((BATCH_SIZE, 1), dtype=np.float32)
 
 
-for epoch in range(40):
+for epoch in range(20):
     np.random.shuffle(poses_2d)
     print("Epoch: ", epoch)
     print("Number of batches: ", int(poses_2d.shape[0]//BATCH_SIZE))
@@ -454,22 +388,14 @@ for epoch in range(40):
     #  TODO
 
         if i % 100 == 0 and i > 0:
-            pred = lifting_model.predict(pose_2d_eval)
-            # caculate training
-            val = 0
-            for p in range(200):
-              #  val = val + 1000*err_3dpe(pose_3d_eval[p:p+1, :], pred[p:p+1, :])
-                val = val + mpjpe_np(pose_3d_eval[p:p+1, :], pred[p:p+1,:])
-
-            val = val/200
                 #  loss_3d_geometric_1, loss_3d_geometric_2, loss_3d, loss_2d
-            sys.stdout.write("\rIteration %d: 3d_error: %.3e, wasserstain_loss: %.3e, rep_err: %.3e,cam_err:%.3e,geometric_loss:%.3e, heuristic_loss: %.3e\n"
-                              %  (i, val, adversarial_loss[-1][0],adversarial_loss[-1][1],adversarial_loss[-1][2],adversarial_loss[-1][3], adversarial_loss[-1][4]))
+            sys.stdout.write("\rIteration %d: wasserstain_loss: %.3e, rep_err: %.3e,cam_err:%.3e,geometric_loss:%.3e, heuristic_loss: %.3e\n"
+                              %  (i, adversarial_loss[-1][0],adversarial_loss[-1][1],adversarial_loss[-1][2],adversarial_loss[-1][3], adversarial_loss[-1][4]))
 
             try:
                 with open("logs/log_" + net_name + ".txt", "a") as logfile:
-                    logfile.write("\rEpoch%d: Iteration %d: 3d_error: %.3e, wasserstain_loss: %.3e, rep_err: %.3e,cam_err:%.3e,geometric_loss:%.3e, heuristic_loss: %.3e\n"
-                              %  (epoch, i, val, adversarial_loss[-1][0],adversarial_loss[-1][1],adversarial_loss[-1][2],adversarial_loss[-1][3], adversarial_loss[-1][4]))
+                    logfile.write("\rEpoch%d: Iteration %d: wasserstain_loss: %.3e, rep_err: %.3e,cam_err:%.3e,geometric_loss:%.3e, heuristic_loss: %.3e\n"
+                              %  (epoch, i,adversarial_loss[-1][0],adversarial_loss[-1][1],adversarial_loss[-1][2],adversarial_loss[-1][3], adversarial_loss[-1][4]))
             except:
                 print('error while writing logfile')
             sys.stdout.flush()
